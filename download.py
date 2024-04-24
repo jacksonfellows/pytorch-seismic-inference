@@ -14,10 +14,9 @@ def download_area(
     restrictions = mass_downloader.Restrictions(
         starttime=starttime,
         endtime=endtime,
-        # TODO: Don't assume vertical component.
         channel_priorities=channel_priorities,
         minimum_interstation_distance_in_m=0,  # Default is 1000 m!
-        # reject_channels_with_gaps=True,  # TODO: Ask Grace about this.
+        chunklength_in_sec=60 * 60 * 24,  # 1 day.
     )
 
     mdl = mass_downloader.MassDownloader(providers=["IRIS"])
