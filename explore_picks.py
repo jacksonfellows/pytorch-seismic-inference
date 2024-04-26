@@ -1,5 +1,7 @@
 import sqlite3
 
+import matplotlib
+import matplotlib.patches as mpatches
 import obspy
 from matplotlib import pyplot as plt
 
@@ -26,29 +28,32 @@ def plot_pick(pick_row):
     plt.show()
 
 
-color_map = dict()
-n = 0
+class Colorer:
+    def __init__(self):
+        self.color_map = dict()
+        self.n = 0
 
+    def __call__(self, x):
+        if x in self.color_map:
+            return self.color_map[x]
+        # Use golden ratio
+        c = matplotlib.colors.hsv_to_rgb(((1.618 * self.n) % 1, 0.7, 1))
+        self.n += 1
+        self.color_map[x] = c
+        return c
 
-def uniq_color(x):
-    global color_map
-    global n
-    if x in color_map:
-        return color_map[x]
-    c = f"C{n}"
-    n += 1
-    color_map[x] = c
-    return c
+    def get_legend_handles(self):
+        return [mpatches.Patch(color=c, label=l) for l, c in self.color_map.items()]
 
 
 def plot_times(clss):
+    C = Colorer()
     su = [row for row in picks if row[4] == clss]
     print(len(su))
     start = obspy.UTCDateTime("2023-01-01")
     pick_times = [obspy.UTCDateTime(pick_row[5]) - start for pick_row in su]
     pick_probs = [pick_row[6] for pick_row in su]
-    station_colors = [
-        uniq_color(".".join((pick_row[0], pick_row[1]))) for pick_row in su
-    ]
+    station_colors = [C(".".join((pick_row[0], pick_row[1]))) for pick_row in su]
+    plt.legend(handles=C.get_legend_handles())
     plt.scatter(pick_times, pick_probs, c=station_colors)
     plt.show()
