@@ -5,5 +5,5 @@ endtime = UTCDateTime(2023, 1, 2)
 download_dir = "./test"
 lat = 46.203880
 lon = -122.190498
-radius_deg = 0.4
+radius_deg = 0.25
 channel_priorities = ("HHZ", "BHZ")
