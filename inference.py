@@ -24,8 +24,8 @@ min_sample = 2 * sampling_rate
 max_sample = 15 * sampling_rate
 
 
-model = torch.load("model1.pt")
-model.eval()
+cpu_model = torch.load("model1.pt")
+cpu_model.eval()
 
 
 def write_pick(trace_stats, source_type, pick_time, pick_prob, db_path):
@@ -49,16 +49,14 @@ def normalize(waveform):
     return normalized / np.std(normalized, axis=-1)[:, None]
 
 
-def apply_batch(X, batch_starttime, trace_stats, db_path):
+def apply_batch(model, X, batch_starttime, trace_stats, db_path):
     code = ".".join(
         [trace_stats[k] for k in ("network", "station", "location", "channel")]
     )
     batch_endtime = batch_starttime + window_len_s * X.shape[0]
     print(f"{code} {batch_starttime} {batch_endtime}")
     with torch.no_grad():
-        X = torch.tensor(
-            X[:, None, :], dtype=torch.float32, device=torch.device("cuda")
-        )
+        X = torch.tensor(X[:, None, :], dtype=torch.float32)
         y = model(X).numpy()
         for batchi in range(y.shape[0]):
             for classi, cls in enumerate(CLASSES):
@@ -76,7 +74,7 @@ def apply_batch(X, batch_starttime, trace_stats, db_path):
                     )
 
 
-def apply_trace(tr, db_path):
+def apply_trace(model, tr, db_path):
     if tr.stats.sampling_rate != sampling_rate:
         tr = tr.resample(sampling_rate)
     XX = tr.data
@@ -89,6 +87,7 @@ def apply_trace(tr, db_path):
             # Normalize after each shift.
             X_norm = normalize(X_shift)
             apply_batch(
+                model,
                 X_norm,
                 tr.stats.starttime + (batch_start + start) / sampling_rate,
                 tr.stats,
@@ -97,20 +96,21 @@ def apply_trace(tr, db_path):
 
 
 # Need to define this for multiprocessing.
-def apply_mseed(args):
+def apply_mseed(model, args):
     mseed_path, db_path = args
     st = obspy.read(mseed_path)
     for tr in st:
-        apply_trace(tr, db_path)
+        apply_trace(model, tr, db_path)
 
 
 def apply_gpu(n, queue):
     with torch.device(f"cuda:{n}"):
+        model = cpu_model.to(torch.device(f"cuda:{n}"))
         while True:
             args = queue.get()
             if args is None:
                 return  # Received stop value, stop worker.
-            apply_mseed(args)
+            apply_mseed(model, args)
 
 
 def run_inference(data_dir, db_path):
