@@ -57,7 +57,7 @@ def apply_batch(model, X, batch_starttime, trace_stats, db_path):
     print(f"{code} {batch_starttime} {batch_endtime}")
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
-        y = model(X).numpy()
+        y = model(X).cpu().numpy()
         for batchi in range(y.shape[0]):
             for classi, cls in enumerate(CLASSES):
                 # Assumes a single peak.
