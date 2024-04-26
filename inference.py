@@ -56,7 +56,9 @@ def apply_batch(X, batch_starttime, trace_stats, db_path):
     batch_endtime = batch_starttime + window_len_s * X.shape[0]
     print(f"{code} {batch_starttime} {batch_endtime}")
     with torch.no_grad():
-        X = torch.tensor(X[:, None, :], dtype=torch.float32)
+        X = torch.tensor(
+            X[:, None, :], dtype=torch.float32, device=torch.device("cuda")
+        )
         y = model(X).numpy()
         for batchi in range(y.shape[0]):
             for classi, cls in enumerate(CLASSES):
