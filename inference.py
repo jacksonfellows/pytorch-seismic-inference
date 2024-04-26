@@ -55,6 +55,7 @@ def apply_batch(model, X, batch_starttime, trace_stats, db_path):
     )
     batch_endtime = batch_starttime + window_len_s * X.shape[0]
     print(f"{code} {batch_starttime} {batch_endtime}")
+    sys.stdout.flush()
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
         y = model(X).cpu().numpy()
