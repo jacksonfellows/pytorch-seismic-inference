@@ -102,10 +102,32 @@ def apply_mseed(args):
         apply_trace(tr, db_path)
 
 
+def apply_gpu(n, queue):
+    with torch.device(f"cuda:{n}"):
+        while True:
+            args = queue.get()
+            if args is None:
+                return  # Received stop value, stop worker.
+            apply_mseed(args)
+
+
 def run_inference(data_dir, db_path):
     mseed_paths = glob.glob(str(Path(data_dir) / "*.mseed"))
-    pool = multiprocessing.Pool(8)
-    pool.map(apply_mseed, [(path, db_path) for path in mseed_paths])
+    n_gpus = 4
+    q = multiprocessing.Queue()
+    processes = []
+    for n in range(n_gpus):
+        p = multiprocessing.Process(target=apply_gpu, args=(n, q))
+        p.start()
+        processes.append(p)
+    for path in mseed_paths:
+        q.put((path, db_path))
+    # Add stop value for each process to queue.
+    for _ in processes:
+        q.put(None)
+    # Wait for all processes to finish.
+    for p in processes:
+        p.join()
 
 
 def create_picks_table(db_path):
