@@ -1,5 +1,6 @@
 # Lots of assumptions for how my specific model works.
 
+import cProfile
 import glob
 import multiprocessing
 import os
@@ -49,12 +50,12 @@ def normalize(waveform):
     return normalized / np.std(normalized, axis=-1)[:, None]
 
 
-def apply_batch(model, X, batch_starttime, trace_stats, db_path):
+def apply_batch(worker_n, model, X, batch_starttime, trace_stats, db_path):
     code = ".".join(
         [trace_stats[k] for k in ("network", "station", "location", "channel")]
     )
     batch_endtime = batch_starttime + window_len_s * X.shape[0]
-    print(f"{code} {batch_starttime} {batch_endtime}")
+    print(f"worker {worker_n} {code} {batch_starttime} {batch_endtime}")
     sys.stdout.flush()
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
@@ -75,9 +76,15 @@ def apply_batch(model, X, batch_starttime, trace_stats, db_path):
                     )
 
 
-def apply_trace(model, tr, db_path):
+def apply_trace(worker_n, model, tr, db_path):
+    print(f"worker {worker_n} working on trace")
+    sys.stdout.flush()
     if tr.stats.sampling_rate != sampling_rate:
+        print(f"worker {worker_n} resampling trace")
+        sys.stdout.flush()
         tr = tr.resample(sampling_rate)
+        print(f"worker {worker_n} done resampling trace")
+        sys.stdout.flush()
     XX = tr.data
     # Trim off extra samples.
     XX = XX[: window_len * (len(XX) // window_len)]
@@ -88,6 +95,7 @@ def apply_trace(model, tr, db_path):
             # Normalize after each shift.
             X_norm = normalize(X_shift)
             apply_batch(
+                worker_n,
                 model,
                 X_norm,
                 tr.stats.starttime + (batch_start + start) / sampling_rate,
@@ -97,25 +105,42 @@ def apply_trace(model, tr, db_path):
 
 
 # Need to define this for multiprocessing.
-def apply_mseed(model, args):
+def apply_mseed(worker_n, model, args):
     mseed_path, db_path = args
-    st = obspy.read(mseed_path)
+    print(f"worker {worker_n} reading {mseed_path}")
+    sys.stdout.flush()
+    st = obspy.read(mseed_path) 
+    print(f"worker {worker_n} done reading {mseed_path}")
+    sys.stdout.flush()
     for tr in st:
-        apply_trace(model, tr, db_path)
+        apply_trace(worker_n, model, tr, db_path)
 
 
 def apply_gpu(n, queue):
+    pr = cProfile.Profile()
+    pr.enable()
     with torch.device(f"cuda:{n}"):
         model = cpu_model.to(torch.device(f"cuda:{n}"))
         while True:
+            print(f"worker {n} waiting...")
+            sys.stdout.flush()
             args = queue.get()
+            print(f"worker {n} got args {args}")
+            sys.stdout.flush()
             if args is None:
-                return  # Received stop value, stop worker.
-            apply_mseed(model, args)
+                print(f"worker {n} breaking!")
+                sys.stdout.flush()
+                break  # Received stop value, stop worker.
+            apply_mseed(n, model, args)
+    pr.disable()
+    prof_path = f"worker_{n}.pstats"
+    print(f"dumping profile to {prof_path}...")
+    sys.stdout.flush()
+    pr.dump_stats(prof_path)
 
 
 def run_inference(data_dir, db_path):
-    mseed_paths = glob.glob(str(Path(data_dir) / "*.mseed"))
+    mseed_paths = glob.glob(str(Path(data_dir) / "*.mseed"))[:100]
     n_gpus = 4
     q = multiprocessing.Queue()
     processes = []
