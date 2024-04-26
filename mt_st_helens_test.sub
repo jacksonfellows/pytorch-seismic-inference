@@ -1,0 +1,8 @@
+#!/bin/bash
+#SBATCH -o logs/mt_st_helens_test_%j.out
+#SBATCH -e logs/mt_st_helens_test_%j.err
+#SBATCH -N 1
+#SBATCH -n 4
+#SBATCH --partition=barcheck
+#SBATCH --gres=gpu:4
+/home/jf787/.conda/envs/j/bin/python inference.py /share/barcheck/data/seismic/pnw_surface_events/mt_st_helens_test mt_st_helens_test.db
