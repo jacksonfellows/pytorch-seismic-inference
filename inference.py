@@ -1,6 +1,7 @@
 # Lots of assumptions for how my specific model works.
 
 import glob
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -26,7 +27,7 @@ model = torch.load("model1.pt")
 model.eval()
 
 
-def write_pick(trace_stats, source_type, pick_time, pick_prob):
+def write_pick(trace_stats, source_type, pick_time, pick_prob, db_path):
     network = trace_stats.network
     station = trace_stats.station
     location = trace_stats.location
@@ -38,7 +39,7 @@ def write_pick(trace_stats, source_type, pick_time, pick_prob):
     pick_time = str(pick_time)  # Convert to str for insertion.
     pick_prob = float(pick_prob)  # sqlite3 doesn't like numpy floats.
     row = (network, station, location, channel, source_type, pick_time, pick_prob)
-    with sqlite3.connect("picks.db") as cur:
+    with sqlite3.connect(db_path) as cur:
         cur.execute(insert_query, row)
 
 
@@ -47,7 +48,7 @@ def normalize(waveform):
     return normalized / np.std(normalized, axis=-1)[:, None]
 
 
-def apply_batch(X, batch_starttime, trace_stats):
+def apply_batch(X, batch_starttime, trace_stats, db_path):
     print(batch_starttime)
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
@@ -63,10 +64,12 @@ def apply_batch(X, batch_starttime, trace_stats):
                     pick_time = (
                         batch_starttime + window_len_s * batchi + peaki / sampling_rate
                     )
-                    write_pick(trace_stats, cls, pick_time, y[batchi, classi, peaki])
+                    write_pick(
+                        trace_stats, cls, pick_time, y[batchi, classi, peaki], db_path
+                    )
 
 
-def apply_trace(tr):
+def apply_trace(tr, db_path):
     if tr.stats.sampling_rate != sampling_rate:
         tr = tr.resample(sampling_rate)
     XX = tr.data
@@ -82,16 +85,28 @@ def apply_trace(tr):
                 X_norm,
                 tr.stats.starttime + (batch_start + start) / sampling_rate,
                 tr.stats,
+                db_path,
             )
 
 
-def run_inference(data_dir):
+def run_inference(data_dir, db_path):
     mseed_paths = glob.glob(str(Path(data_dir) / "*.mseed"))
     for mseed_path in mseed_paths:
         st = obspy.read(mseed_path)
         for tr in st:
-            apply_trace(tr)
+            apply_trace(tr, db_path)
+
+
+def create_picks_table(db_path):
+    with open("schema.sql", "r") as f:
+        create_table_query = f.read()
+    with sqlite3.connect(db_path) as cur:
+        cur.execute(create_table_query)
+    print(f"Created picks table in {db_path}.")
 
 
 if __name__ == "__main__":
-    run_inference(sys.argv[1])
+    data_dir, db_path = sys.argv[1], sys.argv[2]
+    assert not os.path.exists(db_path), f"{db_path} already exists."
+    create_picks_table(db_path)
+    run_inference(data_dir, db_path)
