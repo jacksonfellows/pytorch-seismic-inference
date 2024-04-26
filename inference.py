@@ -1,6 +1,7 @@
 # Lots of assumptions for how my specific model works.
 
 import glob
+import multiprocessing
 import os
 import sqlite3
 import sys
@@ -49,7 +50,11 @@ def normalize(waveform):
 
 
 def apply_batch(X, batch_starttime, trace_stats, db_path):
-    print(batch_starttime)
+    code = ".".join(
+        [trace_stats[k] for k in ("network", "station", "location", "channel")]
+    )
+    batch_endtime = batch_starttime + window_len_s * X.shape[0]
+    print(f"{code} {batch_starttime} {batch_endtime}")
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
         y = model(X).numpy()
@@ -89,12 +94,18 @@ def apply_trace(tr, db_path):
             )
 
 
+# Need to define this for multiprocessing.
+def apply_mseed(args):
+    mseed_path, db_path = args
+    st = obspy.read(mseed_path)
+    for tr in st:
+        apply_trace(tr, db_path)
+
+
 def run_inference(data_dir, db_path):
     mseed_paths = glob.glob(str(Path(data_dir) / "*.mseed"))
-    for mseed_path in mseed_paths:
-        st = obspy.read(mseed_path)
-        for tr in st:
-            apply_trace(tr, db_path)
+    pool = multiprocessing.Pool(8)
+    pool.map(apply_mseed, [(path, db_path) for path in mseed_paths])
 
 
 def create_picks_table(db_path):
