@@ -52,25 +52,20 @@ def apply_batch(worker_n, model, X, batch_starttime, trace_stats, picks_file):
     sys.stdout.flush()
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
-        y = model(X).cpu().numpy()
+        y = model(X)
+        # Find peaks on GPU. Assumes single pick per class for each trace.
+        y_maxes = torch.max(y, dim=-1)
+        y_peak = y_maxes.values.cpu().numpy()
+        y_peaki = y_maxes.indices.cpu().numpy()
         for batchi in range(y.shape[0]):
             for classi, cls in enumerate(CLASSES):
-                # Assumes a single peak.
-                peaki = np.argmax(y[batchi, classi])
-                if (
-                    min_sample < peaki < max_sample
-                    and y[batchi, classi, peaki] > threshold
-                ):
+                peaki = y_peaki[batchi, classi]
+                peak = y_peak[batchi, classi]
+                if min_sample < peaki < max_sample and peak > threshold:
                     pick_time = (
                         batch_starttime + window_len_s * batchi + peaki / sampling_rate
                     )
-                    write_pick(
-                        trace_stats,
-                        cls,
-                        pick_time,
-                        y[batchi, classi, peaki],
-                        picks_file,
-                    )
+                    write_pick(trace_stats, cls, pick_time, peak, picks_file)
 
 
 def apply_trace(worker_n, model, tr, picks_file):
