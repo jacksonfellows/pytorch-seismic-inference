@@ -39,7 +39,7 @@ def write_pick(trace_stats, source_type, pick_time, pick_prob, picks_file):
 
 
 def normalize(waveform):
-    normalized = scipy.signal.detrend(waveform, axis=-1)
+    normalized = scipy.signal.detrend(waveform, axis=-1, type="constant")
     return normalized / np.std(normalized, axis=-1)[:, None]
 
 
