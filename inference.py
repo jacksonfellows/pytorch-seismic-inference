@@ -76,15 +76,17 @@ def apply_batch(worker_n, model, X, batch_starttime, trace_stats, picks_file):
 def apply_trace(worker_n, model, tr, picks_file):
     print(f"worker {worker_n} working on trace")
     sys.stdout.flush()
+    # Trim data to multiple of window_len. Doing this before resampling
+    # makes Fourier transform much faster. See benchmark_resample.py.
+    tr.data = tr.data[: window_len * (len(tr.data) // window_len)]
     if tr.stats.sampling_rate != sampling_rate:
         print(f"worker {worker_n} resampling trace")
         sys.stdout.flush()
-        tr = tr.resample(sampling_rate)
+        tr.resample(sampling_rate)
+        assert tr.stats.sampling_rate == sampling_rate
         print(f"worker {worker_n} done resampling trace")
         sys.stdout.flush()
     XX = tr.data
-    # Trim off extra samples.
-    XX = XX[: window_len * (len(XX) // window_len)]
     for batch_start in range(0, len(XX), batch_size * window_len):
         X_batch = XX[batch_start : batch_start + (batch_size + 1) * window_len]
         for start in range(0, window_len, step):
