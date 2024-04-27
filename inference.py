@@ -38,11 +38,6 @@ def write_pick(trace_stats, source_type, pick_time, pick_prob, picks_file):
     )
 
 
-def normalize(waveform):
-    normalized = scipy.signal.detrend(waveform, axis=-1, type="constant")
-    return normalized / np.std(normalized, axis=-1)[:, None]
-
-
 def apply_batch(worker_n, model, X, batch_starttime, trace_stats, picks_file):
     code = ".".join(
         [trace_stats[k] for k in ("network", "station", "location", "channel")]
@@ -52,6 +47,9 @@ def apply_batch(worker_n, model, X, batch_starttime, trace_stats, picks_file):
     sys.stdout.flush()
     with torch.no_grad():
         X = torch.tensor(X[:, None, :], dtype=torch.float32)
+        # Normalize.
+        X = X - torch.mean(X, dim=-1, keepdim=True)
+        X = X / torch.std(X, dim=-1, keepdim=True)
         y = model(X)
         # Find peaks on GPU. Assumes single pick per class for each trace.
         y_maxes = torch.max(y, dim=-1)
@@ -86,12 +84,10 @@ def apply_trace(worker_n, model, tr, picks_file):
         X_batch = XX[batch_start : batch_start + (batch_size + 1) * window_len]
         for start in range(0, window_len, step):
             X_shift = X_batch[start : -(window_len - start)].reshape(-1, window_len)
-            # Normalize after each shift.
-            X_norm = normalize(X_shift)
             apply_batch(
                 worker_n,
                 model,
-                X_norm,
+                X_shift,
                 tr.stats.starttime + (batch_start + start) / sampling_rate,
                 tr.stats,
                 picks_file,
