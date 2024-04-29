@@ -19,7 +19,7 @@ window_len_s = 60
 sampling_rate = 100  # Hz
 window_len = window_len_s * sampling_rate
 step = 10 * sampling_rate
-threshold = 0.1
+threshold = 0.5
 min_sample = 2 * sampling_rate
 max_sample = 15 * sampling_rate
 
