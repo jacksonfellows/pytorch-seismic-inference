@@ -14,7 +14,7 @@ import torch
 
 CLASSES = ["earthquake", "explosion", "surface event"]
 
-batch_size = 64
+batch_size = 256
 window_len_s = 60
 sampling_rate = 100  # Hz
 window_len = window_len_s * sampling_rate
