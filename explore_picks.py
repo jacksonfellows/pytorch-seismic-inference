@@ -1,59 +1,95 @@
-import sqlite3
+import datetime
+import glob
 
 import matplotlib
 import matplotlib.patches as mpatches
+import numpy as np
 import obspy
+import pandas as pd
+from matplotlib import dates as mdates
 from matplotlib import pyplot as plt
 
-# TODO: This approach won't work for lots of data.
-st = obspy.read("test/*.mseed")
+picks = pd.read_csv("mt_st_helens_test.csv", parse_dates=["pick_time"])
 
 
-def load_picks():
-    with sqlite3.connect("picks.db") as cur:
-        res = cur.execute("SELECT * FROM picks;")
-        return res.fetchall()
-
-
-picks = load_picks()
-
-
-def plot_pick(pick_row):
-    network, station, location, channel, source_type, pick_time, pick_prob = pick_row
-    tr = st.select(network=network, station=station)[0]
-    pick_time = obspy.UTCDateTime(pick_time)
-    X = tr.slice(pick_time - 30, pick_time + 30).data
-    plt.plot(X, "k", linewidth=0.5)
-    plt.vlines(30 * tr.stats.sampling_rate, X.min(), X.max(), "r")
+def plot_times(clss, threshold):
+    picks_clss = picks[
+        (picks["source_type"] == clss) & (picks["pick_prob"] > threshold)
+    ]
+    # pick_times = picks_clss["pick_time"].dt.tz_convert("US/Pacific").dt.time
+    pick_times = picks_clss["pick_time"].dt.tz_convert("US/Pacific")
+    pick_probs = picks_clss["pick_prob"]
+    pick_times.hist(bins=365)
+    # plt.plot(pick_times, pick_probs, "be", alpha=0.01)
     plt.show()
 
 
-class Colorer:
-    def __init__(self):
-        self.color_map = dict()
-        self.n = 0
+def find_events(clss, threshold):
+    picks_ = picks[(picks["source_type"] == clss) & (picks["pick_prob"] > threshold)]
+    times = picks_["pick_time"].to_numpy()
+    station_codes = (picks_["network"] + "." + picks_["station"]).to_numpy()
+    I = np.argsort(times)
+    times = times[I]
+    station_codes = station_codes[I]
+    dt = np.timedelta64(10, "s")
+    event_times = []
+    event_num_stations = []
+    i = 0
+    while i < len(times):
+        indices = [i]
+        j = i + 1
+        while j < len(times) and (times[j] - times[i]) < dt:
+            if station_codes[i] != station_codes[j]:
+                indices.append(j)
+            j += 1
+        if len(indices) > 1:
+            # TODO try to fit the most stations into each event.
+            event_times.append(np.min(times[indices]))
+            event_num_stations.append(len(set(station_codes[indices])))
+            i = j + 1
+        else:
+            i += 1
 
-    def __call__(self, x):
-        if x in self.color_map:
-            return self.color_map[x]
-        # Use golden ratio
-        c = matplotlib.colors.hsv_to_rgb(((1.618 * self.n) % 1, 0.7, 1))
-        self.n += 1
-        self.color_map[x] = c
-        return c
-
-    def get_legend_handles(self):
-        return [mpatches.Patch(color=c, label=l) for l, c in self.color_map.items()]
+    return np.array(event_times), np.array(event_num_stations)
 
 
-def plot_times(clss):
-    C = Colorer()
-    su = [row for row in picks if row[4] == clss]
-    print(len(su))
-    start = obspy.UTCDateTime("2023-01-01")
-    pick_times = [obspy.UTCDateTime(pick_row[5]) - start for pick_row in su]
-    pick_probs = [pick_row[6] for pick_row in su]
-    station_colors = [C(".".join((pick_row[0], pick_row[1]))) for pick_row in su]
-    plt.legend(handles=C.get_legend_handles())
-    plt.scatter(pick_times, pick_probs, c=station_colors)
-    plt.show()
+def plot_su(su_times_, su_num_stations, ns, days, num_stations):
+    fig, axs = plt.subplots(
+        layout="tight", figsize=(19, 8), nrows=len(ns) + 1, sharex=True
+    )
+    plt.suptitle("Mount St. Helens, 2023")
+    for i, n in enumerate(ns):
+        su_times = su_times_[su_num_stations >= n]
+        axs[i].set_title(f"{n} or more stations (n={len(su_times)})")
+        axs[i].spines["top"].set_visible(False)
+        axs[i].spines["right"].set_visible(False)
+        axs[i].xaxis.set_major_locator(mdates.MonthLocator())
+        axs[i].xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+        axs[i].hist(su_times, bins=365)
+        axs[i].set_ylabel("# of Surface Events")
+    axs[-1].set_xlabel("Day")
+    # plt.show()
+    axs[-1].set_ylabel("# of Stations")
+    axs[-1].bar(days, num_stations, width=1, color="grey")
+    # plt.show()
+    axs[-1].spines["top"].set_visible(False)
+    axs[-1].spines["right"].set_visible(False)
+    plt.savefig("su_st_helens_2023.png", dpi=300)
+
+
+def find_station_availability(data_dir):
+    mseed_files = glob.glob(f"{data_dir}/*.mseed")
+    print("n =", len(mseed_files))
+    t = datetime.datetime(year=2023, month=1, day=1)
+    days = []
+    num_stations = []
+    while t.year == 2023:
+        next_t = t + datetime.timedelta(days=1)
+        date_str = (
+            f"{t.strftime('%Y%m%d')}T000000Z__{next_t.strftime('%Y%m%d')}T000000Z"
+        )
+        day_files = [path for path in mseed_files if date_str in path]
+        days.append(t)
+        num_stations.append(len(day_files))
+        t = next_t
+    return np.array(days), np.array(num_stations)

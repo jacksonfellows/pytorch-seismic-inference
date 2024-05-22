@@ -6,7 +6,7 @@ import obspy.clients.fdsn.mass_downloader as mass_downloader
 
 
 def download_area(
-    download_dir, starttime, endtime, lat, lon, radius_deg, channel_priorities
+    download_dir, starttime, endtime, lat, lon, radius_deg, channel_priorities, **kwargs
 ):
     domain = mass_downloader.CircularDomain(
         latitude=lat, longitude=lon, minradius=0, maxradius=radius_deg
@@ -17,6 +17,9 @@ def download_area(
         channel_priorities=channel_priorities,
         minimum_interstation_distance_in_m=0,  # Default is 1000 m!
         chunklength_in_sec=60 * 60 * 24,  # 1 day.
+        # Try to get as much data as possible:
+        reject_channels_with_gaps=False,
+        minimum_length=0.0,  # Min. length as fraction of time frame.
     )
 
     mdl = mass_downloader.MassDownloader(providers=["IRIS"])
@@ -36,27 +39,21 @@ def parse_config_file(path):
         exec(f.read(), config_globals)
 
     config = dict()
-    config_keys = (
-        "download_dir",
-        "starttime",
-        "endtime",
-        "lat",
-        "lon",
-        "radius_deg",
-        "channel_priorities",
+    config_vars = (
+        ("download_dir", str),
+        ("starttime", obspy.core.utcdatetime.UTCDateTime),
+        ("endtime", obspy.core.utcdatetime.UTCDateTime),
+        ("lat", numbers.Number),
+        ("lon", numbers.Number),
+        ("radius_deg", numbers.Number),
+        ("channel_priorities", object),  # Any type.
+        ("n_attempts", int),
     )
-    for k in config_keys:
-        assert k in config_globals, f"Parameter {k} missing!"
-        config[k] = config_globals[k]
-
     # Validate config.
-    assert (
-        type(config["starttime"])
-        == type(config["endtime"])
-        == obspy.core.utcdatetime.UTCDateTime
-    )
-    for num in (config["lat"], config["lon"], config["radius_deg"]):
-        assert isinstance(num, numbers.Number)
+    for k, type_ in config_vars:
+        assert k in config_globals, f"Parameter {k} missing!"
+        assert isinstance(config_globals[k], type_)
+        config[k] = config_globals[k]
 
     return config
 
@@ -64,4 +61,6 @@ def parse_config_file(path):
 if __name__ == "__main__":
     config = parse_config_file(sys.argv[1])
     print(f"config = {config}")
-    download_area(**config)
+    for n in range(config["n_attempts"]):
+        print(f"Attempt {n}:")
+        download_area(**config)
