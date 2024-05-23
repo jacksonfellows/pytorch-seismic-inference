@@ -63,4 +63,8 @@ if __name__ == "__main__":
     print(f"config = {config}")
     for n in range(config["n_attempts"]):
         print(f"Attempt {n}:")
-        download_area(**config)
+        try:
+            download_area(**config)
+        except Exception as e:
+            print(f"Got exception {e}")
+            pass
