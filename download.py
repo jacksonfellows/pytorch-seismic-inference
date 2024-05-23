@@ -62,7 +62,7 @@ if __name__ == "__main__":
     config = parse_config_file(sys.argv[1])
     print(f"config = {config}")
     for n in range(config["n_attempts"]):
-        print(f"Attempt {n}:")
+        print(f"Attempt {n}:", flush=True)
         try:
             download_area(**config)
         except Exception as e:
