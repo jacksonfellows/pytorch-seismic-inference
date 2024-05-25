@@ -77,13 +77,15 @@ def plot_su(su_times_, su_num_stations, ns, days, num_stations):
     plt.savefig("su_st_helens_2023.png", dpi=300)
 
 
-def find_station_availability(data_dir):
-    mseed_files = glob.glob(f"{data_dir}/*.mseed")
+def find_station_availability(files_list, start_time, end_time):
+    with open(files_list, "r") as f:
+        mseed_files = f.readlines()
     print("n =", len(mseed_files))
-    t = datetime.datetime(year=2023, month=1, day=1)
+    t = start_time
     days = []
     num_stations = []
-    while t.year == 2023:
+    # TODO: Sort files first.
+    while t < end_time:
         next_t = t + datetime.timedelta(days=1)
         date_str = (
             f"{t.strftime('%Y%m%d')}T000000Z__{next_t.strftime('%Y%m%d')}T000000Z"
@@ -93,3 +95,12 @@ def find_station_availability(data_dir):
         num_stations.append(len(day_files))
         t = next_t
     return np.array(days), np.array(num_stations)
+
+
+def plot_station_availability(files_list, start_time, end_time):
+    days, num_stations = find_station_availability(files_list, start_time, end_time)
+    plt.xlabel("Day")
+    plt.ylabel("# of stations")
+    plt.bar(days, num_stations, width=1, color="grey")
+    # TODO: Show 2,3,4,... more clearly.
+    plt.show()
