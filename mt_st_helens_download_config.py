@@ -10,7 +10,7 @@ lat = 46.203880
 lon = -122.190498
 
 radius_deg = 0.25
-channel_priorities = ("HHZ", "BHZ")
+channel_priorities = ("EHZ", "HHZ", "BHZ")
 
 # How many times to try to download missing traces.
 n_attempts = 5
