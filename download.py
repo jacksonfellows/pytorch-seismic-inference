@@ -5,32 +5,40 @@ import obspy
 import obspy.clients.fdsn.mass_downloader as mass_downloader
 
 
+def split_time_range(startyear, endyear):
+    """Yields pairs (starttime, endtime) of obspy.UTCDateTime values."""
+    for yr in range(startyear, endyear):
+        yield (obspy.UTCDateTime(yr, 1, 1), obspy.UTCDateTime(yr + 1, 1, 1))
+
+
 def download_area(
-    download_dir, starttime, endtime, lat, lon, radius_deg, channel_priorities, **kwargs
+    download_dir, startyear, endyear, lat, lon, radius_deg, channel_priorities, **kwargs
 ):
     domain = mass_downloader.CircularDomain(
         latitude=lat, longitude=lon, minradius=0, maxradius=radius_deg
     )
-    restrictions = mass_downloader.Restrictions(
-        starttime=starttime,
-        endtime=endtime,
-        channel_priorities=channel_priorities,
-        minimum_interstation_distance_in_m=0,  # Default is 1000 m!
-        chunklength_in_sec=60 * 60 * 24,  # 1 day.
-        # Try to get as much data as possible:
-        reject_channels_with_gaps=False,
-        minimum_length=0.0,  # Min. length as fraction of time frame.
-    )
-
     mdl = mass_downloader.MassDownloader(providers=["IRIS"])
-    mdl.download(
-        domain=domain,
-        restrictions=restrictions,
-        mseed_storage=download_dir,
-        stationxml_storage=download_dir,
-        threads_per_client=8,
-        download_chunk_size_in_mb=32,
-    )
+
+    for starttime, endtime in split_time_range(startyear, endyear):
+        restrictions = mass_downloader.Restrictions(
+            starttime=starttime,
+            endtime=endtime,
+            channel_priorities=channel_priorities,
+            minimum_interstation_distance_in_m=0,  # Default is 1000 m!
+            chunklength_in_sec=60 * 60 * 24,  # 1 day.
+            # Try to get as much data as possible:
+            reject_channels_with_gaps=False,
+            minimum_length=0.0,  # Min. length as fraction of time frame.
+        )
+
+        mdl.download(
+            domain=domain,
+            restrictions=restrictions,
+            mseed_storage=download_dir,
+            stationxml_storage=download_dir,
+            threads_per_client=8,
+            download_chunk_size_in_mb=32,
+        )
 
 
 def parse_config_file(path):
@@ -41,8 +49,8 @@ def parse_config_file(path):
     config = dict()
     config_vars = (
         ("download_dir", str),
-        ("starttime", obspy.core.utcdatetime.UTCDateTime),
-        ("endtime", obspy.core.utcdatetime.UTCDateTime),
+        ("startyear", int),
+        ("endyear", int),
         ("lat", numbers.Number),
         ("lon", numbers.Number),
         ("radius_deg", numbers.Number),

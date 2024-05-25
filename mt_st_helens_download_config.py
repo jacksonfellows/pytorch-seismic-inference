@@ -1,7 +1,7 @@
 from obspy import UTCDateTime
 
-starttime = UTCDateTime(2000, 1, 1)
-endtime = UTCDateTime(2024, 1, 1)
+startyear = 2000
+endyear = 2024
 
 download_dir = "/share/barcheck/data/seismic/pnw_surface_events/mt_st_helens_2000_2024"
 
