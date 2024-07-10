@@ -99,12 +99,16 @@ def apply_mseed(worker_n, model, args):
     mseed_path, picks_path = args
     print(f"worker {worker_n} reading {mseed_path}")
     sys.stdout.flush()
-    st = obspy.read(mseed_path)
-    print(f"worker {worker_n} done reading {mseed_path}")
-    sys.stdout.flush()
-    for tr in st:
-        with open(picks_path, "a") as picks_file:
-            apply_trace(worker_n, model, tr, picks_file)
+    try:
+        st = obspy.read(mseed_path)
+        print(f"worker {worker_n} done reading {mseed_path}")
+        sys.stdout.flush()
+        for tr in st:
+            with open(picks_path, "a") as picks_file:
+                apply_trace(worker_n, model, tr, picks_file)
+    except:
+        print(f"worker {worker_n} failed to run inference, skipping")
+        sys.stdout.flush()
 
 
 def apply_gpu(n, queue):
