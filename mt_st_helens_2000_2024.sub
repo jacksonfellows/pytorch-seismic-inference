@@ -1,0 +1,10 @@
+#!/bin/bash
+#SBATCH -o logs/mt_st_helens_2000_2024_%j.out
+#SBATCH -e logs/mt_st_helens_2000_2024_%j.err
+#SBATCH -N 1
+#SBATCH -n 8
+#SBATCH --mem=32G
+#SBATCH --partition=barcheck
+#SBATCH --gres=gpu:4
+#SBATCH --time=4-00:00:00
+/home/jf787/.conda/envs/j/bin/python inference.py /share/barcheck/data/seismic/pnw_surface_events/mt_st_helens_2000_2024 mt_st_helens_2000_2024_picks.csv
