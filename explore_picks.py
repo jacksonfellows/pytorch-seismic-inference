@@ -78,7 +78,7 @@ def save_events():
 
 
 def load_event_dfs():
-    local_time = "US/Pacific"
+    local_time = "UTC-08:00"  # PST
     df_eq, df_ex, df_su = [
         pd.read_csv(x, parse_dates=[0], index_col=0).tz_convert(local_time)
         for x in [
@@ -90,18 +90,21 @@ def load_event_dfs():
     return dict(eq=df_eq, ex=df_ex, su=df_su)
 
 
-def plot2(dfs):
+def plot2(dfs, show=True):
     fig, axs = plt.subplots(
-        nrows=3,
+        nrows=4,
         ncols=1,
         sharex=True,
         sharey=False,
         layout="constrained",
-        figsize=(8.5, 5),
+        figsize=(11, 7),
+        height_ratios=[1, 1, 1, 0.5],
     )
     nminstats = 3
     plt.xlim(pd.Timestamp("2000"), pd.Timestamp("2024"))
     plt.suptitle(f"Mt. St. Helens 2000–2024, detections at ≥{nminstats} stations")
+    eruptive_start = pd.Timestamp("2004-09-23")
+    eruptive_end = pd.Timestamp("2008-02-01")  # Fuzzy
     for i, (cls, clsl) in enumerate(
         zip(["Earthquakes", "Explosions", "Surface events"], ["eq", "ex", "su"])
     ):
@@ -117,15 +120,43 @@ def plot2(dfs):
             .resample("1D")
             .count()
         )
-        axs[i].plot(
-            day_counts.index, day_counts.to_numpy()[:, 0], color="k", linewidth=0.5
+        # axs[i].plot(
+        #     day_counts.index, day_counts.to_numpy()[:, 0], color="k", linewidth=0.5
+        # )
+        axs[i].scatter(
+            day_counts.index,
+            day_counts.to_numpy()[:, 0],
+            c="k",
+            s=0.75,
+            edgecolor="none",
         )
-    # plt.show()
-    plt.savefig("figures/mt_st_helens_2000_2024.pdf")
-    plt.close()
+        lo, hi = axs[i].get_ylim()
+        axs[i].fill_between(
+            [eruptive_start, eruptive_end],
+            [lo, lo],
+            [hi, hi],
+            color="lightblue",
+            alpha=0.5,
+            edgecolor="none",
+        )
+    days, num_stations = find_station_availability(
+        "mt_st_helens_2000_2024_files_3",
+        datetime.datetime(year=2000, month=1, day=1),
+        datetime.datetime(year=2024, month=1, day=1),
+        networks=["CC", "UW"],
+    )
+    axs[-1].spines["top"].set_visible(False)
+    axs[-1].spines["right"].set_visible(False)
+    axs[-1].set_ylabel("# of stations")
+    axs[-1].bar(days, num_stations, width=1, color="grey", alpha=0.7)
+    if show:
+        plt.show()
+    else:
+        plt.savefig("figures/mt_st_helens_2000_2024.pdf")
+        plt.close()
 
 
-def plot_seasonal(dfs):
+def plot_seasonal(dfs, show=True):
     nminstats = 3
     fig, axs = plt.subplots(
         layout="constrained",
@@ -162,21 +193,24 @@ def plot_seasonal(dfs):
             mat[j, :L] = yy[:L]
         mat -= np.mean(mat, axis=1).reshape((-1, 1))
         mat /= np.std(mat, axis=1).reshape((-1, 1))
-        for j in range(len(years)):
-            axs[i].plot(x, mat[j], color="k", linewidth=0.2)
         mean = np.mean(mat, axis=0)
         std = np.std(mat, axis=0)
+        for j in range(len(years)):
+            axs[i].scatter(x, mat[j], c="k", s=1, edgecolor="none")
         axs[i].fill_between(
-            x, mean - std, mean + std, color="r", alpha=0.2, edgecolor="none"
+            x, mean - std, mean + std, color="red", alpha=0.5, edgecolor="none"
         )
+        axs[i].plot(x, mean, color="k", linewidth=1)
     axs[-1].xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%b"))
     # axs[-1].set_xlabel("Day of year")
-    # plt.show()
-    plt.savefig("figures/mt_st_helens_seasonal.pdf")
-    plt.close()
+    if show:
+        plt.show()
+    else:
+        plt.savefig("figures/mt_st_helens_seasonal.pdf")
+        plt.close()
 
 
-def plot_su_day(dfs):
+def plot_diurnal(dfs, show=True):
     nminstats = 3
     fig = plt.figure(layout="constrained", figsize=(13, 8.5))
     subfigs = fig.subfigures(nrows=1, ncols=3)
@@ -194,18 +228,20 @@ def plot_su_day(dfs):
             axs[-1, i].set_xlabel("Hour of day")
             axs[-1, i].set_xticks([6, 12, 18, 24])
         df = dfs[keys[subfigi]]
-        # TODO only non-volcanic years?
+        years = list(range(2000, 2004)) + list(range(2008, 2024))
         subfig.suptitle(labels[subfigi])
         for month in range(1, 13):
             row, col = divmod(month - 1, 3)
             axs[row, col].set_title(calendar.month_name[month])
             binned = df[
                 (df["nstations"] >= nminstats)
-                & (df.index.year >= 2000)
+                & (df.index.year.isin(years))
                 & (df.index.month == month)
             ].resample("1Y")
             bin2size = 60
             L = 24 * 60 // bin2size
+            # Trim out empty years.
+            binned = [(a, b) for a, b in iter(binned) if len(b) > 0]
             mat = np.zeros((len(binned), L))
             for i, (_, bin_) in enumerate(binned):
                 bin2id = (bin_.index.hour * 60 + bin_.index.minute) // bin2size
@@ -216,51 +252,55 @@ def plot_su_day(dfs):
             mat /= np.std(mat, axis=1).reshape((-1, 1))
             x = bin2size * np.arange(L) / 60 + 1
             for i in range(len(binned)):
-                axs[row, col].plot(x, mat[i], color="k", linewidth=0.2)
+                axs[row, col].scatter(x, mat[i], c="k", s=4, edgecolor="none")
             mean = np.mean(mat, axis=0)
             std = np.std(mat, axis=0)
             axs[row, col].fill_between(
-                x, mean - std, mean + std, color="r", alpha=0.2, edgecolor="none"
+                x, mean - std, mean + std, color="r", alpha=0.5, edgecolor="none"
             )
-    plt.savefig("figures/mt_st_helens_diurnal.pdf")
-    plt.close()
+            axs[row, col].plot(x, mean, color="k", linewidth=1)
+    if show:
+        plt.show()
+    else:
+        plt.savefig("figures/mt_st_helens_diurnal.pdf")
+        plt.close()
 
 
-# def find_station_availability(files_list, start_time, end_time, networks="*"):
-#     with open(files_list, "r") as f:
-#         mseed_files = f.readlines()
-#     # Create regular expression to match network codes.
-#     if networks == "*":
-#         network_regexp = "[A-Z]+"
-#     else:
-#         network_regexp = "(" + "|".join(networks) + ")"
-#     path_regexp = f"^{network_regexp}\."
-#     mseed_files = [path for path in mseed_files if re.match(path_regexp, path)]
-#     print("n =", len(mseed_files))
-#     date_counts = Counter()
-#     for path in mseed_files:
-#         if path.endswith(".mseed\n"):
-#             date_str = path.split("__")[1]
-#             date_counts[date_str] += 1
-#     # Convert map of date -> # of stations to arrays I can easily plot.
-#     days = []
-#     num_stations = []
-#     t = start_time
-#     while t < end_time:
-#         s = t.strftime("%Y%m%d") + "T000000Z"
-#         days.append(t)
-#         num_stations.append(date_counts[s])
-#         t += datetime.timedelta(days=1)
-#     return days, num_stations
+def find_station_availability(files_list, start_time, end_time, networks="*"):
+    with open(files_list, "r") as f:
+        mseed_files = f.readlines()
+    # Create regular expression to match network codes.
+    if networks == "*":
+        network_regexp = "[A-Z]+"
+    else:
+        network_regexp = "(" + "|".join(networks) + ")"
+    path_regexp = f"^{network_regexp}\."
+    mseed_files = [path for path in mseed_files if re.match(path_regexp, path)]
+    print("n =", len(mseed_files))
+    date_counts = Counter()
+    for path in mseed_files:
+        if path.endswith(".mseed\n"):
+            date_str = path.split("__")[1]
+            date_counts[date_str] += 1
+    # Convert map of date -> # of stations to arrays I can easily plot.
+    days = []
+    num_stations = []
+    t = start_time
+    while t < end_time:
+        s = t.strftime("%Y%m%d") + "T000000Z"
+        days.append(t)
+        num_stations.append(date_counts[s])
+        t += datetime.timedelta(days=1)
+    return days, num_stations
 
 
-# def plot_station_availability(files_list, start_time, end_time, networks="*"):
-#     days, num_stations = find_station_availability(
-#         files_list, start_time, end_time, networks
-#     )
-#     plt.title(f"Networks = {networks}")
-#     plt.xlabel("Day")
-#     plt.ylabel("# of stations")
-#     plt.bar(days, num_stations, width=1, color="grey")
-#     # TODO: Show 2,3,4,... more clearly.
-#     plt.show()
+def plot_station_availability(files_list, start_time, end_time, networks="*"):
+    days, num_stations = find_station_availability(
+        files_list, start_time, end_time, networks
+    )
+    plt.title(f"Networks = {networks}")
+    plt.xlabel("Day")
+    plt.ylabel("# of stations")
+    plt.bar(days, num_stations, width=1, color="grey")
+    # TODO: Show 2,3,4,... more clearly.
+    plt.show()
